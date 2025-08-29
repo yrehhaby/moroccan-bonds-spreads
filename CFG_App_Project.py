@@ -103,7 +103,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 # --- EN-TÊTE : Logo Grand + Titre + Sous-titre ---
-col1, col2, col3 = st.columns([1, 6, 1])  # Largeur centrale élargie
+col1, col2, col3 = st.columns([1, 2.5, 1])  # Largeur centrale élargie
 with col2:
     st.markdown('<div class="header-container">', unsafe_allow_html=True)
     # ✅ Logo grand avec ombre profonde (via CSS)
@@ -496,7 +496,7 @@ else:
     st.success("✅ Aucun spread négatif détecté. Toutes les obligations sont conservées.")
 
 # --- Onglets principaux ---
-tab1, tab3, tab4 = st.tabs([
+tab1, tab2, tab3 = st.tabs([
     "Analyse par Émetteur",
     "Courbe des Taux",
     "Benchmark & Comparaison"
@@ -768,7 +768,7 @@ with tab1:
 # ======================
 # ONGLET 3 : Courbe des taux
 # ======================
-with tab3:
+with tab2:
     st.subheader(" Évolution de la courbe des taux souverains (BKAM)")
 
     selected_dates = st.multiselect(
@@ -800,7 +800,7 @@ st.markdown(
 # ======================
 # ONGLET 4 : Benchmark & Comparaison d'Émetteurs
 # ======================
-with tab4:
+with tab3:
     st.header("📊 Benchmark & Comparaison d'Émetteurs")
 
     # --- Filtres dans la sidebar ---
@@ -1058,50 +1058,81 @@ with tab4:
     )
 
     st.plotly_chart(fig_timeline, use_container_width=True)
-    # --- Graphique 5: Boxplot des spreads (obligations vivantes uniquement) ---
-st.markdown("### 📦 Spread des Obligations Vivantes (Distribution par Émetteur)")
+        # --- Graphique 5: Boxplot des spreads (obligations vivantes uniquement) ---
+    st.markdown("### 📦 Spread des Obligations Vivantes (Distribution par Émetteur)")
 
-today = pd.Timestamp.today()
+    today = pd.Timestamp.today()
 
-# Filtrer les obligations vivantes parmi les émetteurs sélectionnés
-vivantes_bench = filtered_bench[filtered_bench['MATURITYDT_L'] > today].copy()
+    # Filtrer les obligations vivantes parmi les émetteurs sélectionnés
+    vivantes_bench = filtered_bench[filtered_bench['MATURITYDT_L'] > today].copy()
 
-if vivantes_bench.empty:
-    st.info("Aucune obligation vivante trouvée parmi les émetteurs sélectionnés.")
-else:
-    st.success(f"✅ {len(vivantes_bench)} obligation(s) vivante(s) incluse(s) dans l’analyse.")
+    if vivantes_bench.empty:
+        st.info("Aucune obligation vivante trouvée parmi les émetteurs sélectionnés.")
+    else:
+        st.success(f"✅ {len(vivantes_bench)} obligation(s) vivante(s) incluse(s) dans l’analyse.")
 
-    fig_box_live = px.box(
-        vivantes_bench,
-        x='EMETTEUR',
-        y='Spread_bp',
-        color='EMETTEUR',
-        title="Distribution des Spreads (Obligations Vivantes)",
-        labels={'Spread_bp': 'Spread (pb)', 'EMETTEUR': 'Émetteur'},
-        hover_data={
-            'ISIN': True,
-            'DESCRIPTION': True,
-            'MATURITY_YEARS': ':.1f ans',
-            'INTERESTRATE': ':.2f%'
-        },
-        color_discrete_sequence=px.colors.qualitative.Bold
-    )
+        fig_box_live = px.box(
+            vivantes_bench,
+            x='EMETTEUR',
+            y='Spread_bp',
+            color='EMETTEUR',
+            title="Distribution des Spreads (Obligations Vivantes)",
+            labels={'Spread_bp': 'Spread (pb)', 'EMETTEUR': 'Émetteur'},
+            hover_data={
+                'ISIN': True,
+                'DESCRIPTION': True,
+                'MATURITY_YEARS': ':.1f ans',
+                'INTERESTRATE': ':.2f%'
+            },
+            color_discrete_sequence=px.colors.qualitative.Bold
+        )
 
-    fig_box_live.update_layout(
-        xaxis_title="Émetteur",
-        yaxis_title="Spread (points de base)",
-        showlegend=False,
-        hovermode='x unified'
-    )
+        fig_box_live.update_layout(
+            xaxis_title="Émetteur",
+            yaxis_title="Spread (points de base)",
+            showlegend=False,
+            hovermode='x unified'
+        )
 
-    st.plotly_chart(fig_box_live, use_container_width=True) 
+        st.plotly_chart(fig_box_live, use_container_width=True) 
 
-    # --- Classement ---
-    st.markdown("### 🏆 Classement des Émetteurs par Spread Moyen")
-    ranking = spread_mean.sort_values(ascending=True).reset_index()
-    ranking.columns = ['Émetteur', 'Spread Moyen (pb)']
+        # --- Classement ---
+    st.markdown("### 🏆 Classement des Émetteurs par Spread Ajusté (Normalisé par Maturité)")
+
+    # Calculer le spread ajusté par maturité pour chaque obligation
+    filtered_bench['Spread_par_an'] = filtered_bench['Spread_bp'] / filtered_bench['MATURITY_YEARS']
+
+    # Moyenne pondérée ou simple ? Deux options :
+
+    # ✅ Option 1 : Moyenne simple du spread par an (recommandée pour simplicité)
+    spread_ajuste = filtered_bench.groupby('EMETTEUR')['Spread_par_an'].mean().round(1)
+
+    # ✅ Option 2 (avancée) : Moyenne pondérée par le capital (si disponible)
+    # if st.session_state.get('has_issuecapital', False):
+    #     filtered_bench['Weight'] = filtered_bench['ISSUECAPITAL']
+    #     spread_ajuste = (
+    #         (filtered_bench['Spread_par_an'] * filtered_bench['Weight']).groupby(filtered_bench['EMETTEUR']).sum() /
+    #         filtered_bench['Weight'].groupby(filtered_bench['EMETTEUR']).sum()
+    #     ).round(1)
+    # else:
+    #     spread_ajuste = filtered_bench.groupby('EMETTEUR')['Spread_par_an'].mean().round(1)
+
+    # Trier par spread ajusté croissant (meilleur crédit en haut)
+    ranking = spread_ajuste.sort_values(ascending=True).reset_index()
+    ranking.columns = ['Émetteur', 'Spread ajusté (pb/an)']
     ranking['Rang'] = ranking.index + 1
+
     st.dataframe(ranking, use_container_width=True)
+
+    # --- Top 3 / Bottom 3 ---
+    top3 = ranking.head(3)['Émetteur'].tolist()
+    bottom3 = ranking.tail(3)['Émetteur'].tolist()
+
+    st.markdown(f"**Meilleur crédit (spread ajusté)** : 1. {top3[0]} | 2. {top3[1]} | 3. {top3[2]}")
+    st.markdown(f"**Risque de crédit élevé (spread ajusté)** : 1. {bottom3[2]} | 2. {bottom3[1]} | 3. {bottom3[0]}")
+
+    # 💡 Explication
+    st.caption("💡 Le classement est basé sur le spread moyen divisé par la maturité (pb/an), pour une comparaison équitable entre émetteurs à maturités différentes.")
 
     # --- Top 3 / Bottom 3 ---
     top3 = ranking.head(3)['Émetteur'].tolist()
